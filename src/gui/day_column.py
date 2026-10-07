@@ -45,15 +45,16 @@ class DayColumn(QWidget):
         self.btn_add.setStyleSheet("""
             QPushButton {
                 font-size: 24px;
-                color: #0078d7;
+                color: #00bcd4; /* Светло-бирюзовый неон */
                 background-color: transparent;
                 border: none;
             }
             QPushButton:hover {
-                color: #005a9e;
+                color: #00e5ff;
                 font-size: 26px;
             }
         """)
+
         self.btn_add.clicked.connect(lambda: self.add_requested.emit(self.day_index))
         self.main_layout.addWidget(self.btn_add, alignment=Qt.AlignmentFlag.AlignCenter)
         
@@ -62,20 +63,18 @@ class DayColumn(QWidget):
 
     def set_column_style(self, is_today):
         """Задает свойства для стилизации столбца через QSS"""
-        # Заставляем виджет корректно отображать фоновые стили QSS
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         
-        # Используем специальное динамическое свойство для QSS
         if is_today:
             self.setProperty("today", "true")
-            self.lbl_title.setStyleSheet("font-weight: bold; font-size: 13px; color: #0078d7; padding: 4px; background: transparent;")
+            self.lbl_title.setStyleSheet("font-weight: bold; font-size: 13px; color: #0078d7; padding: 6px; background: transparent;")
         else:
             self.setProperty("today", "false")
-            self.lbl_title.setStyleSheet("font-weight: bold; font-size: 13px; color: #222222; padding: 4px; background: transparent;")
+            self.lbl_title.setStyleSheet("font-weight: bold; font-size: 13px; color: #ffffff; padding: 6px; background: transparent;")
         
-        # Обновляем стиль виджета в реальном времени
         self.style().unpolish(self)
         self.style().polish(self)
+
 
 
     def refresh_slots(self, slots_list, nearest_slot_id):

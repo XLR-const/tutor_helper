@@ -11,79 +11,75 @@ class SlotWidget(QWidget):
         self.slot_id = slot_data["id"]
         self.slot_data = slot_data
         
-        # Основной вертикальный слой
         self.main_layout = QVBoxLayout(self)
-        self.main_layout.setContentsMargins(6, 6, 6, 6)
+        self.main_layout.setContentsMargins(8, 8, 8, 8)
         self.main_layout.setSpacing(4)
         
-        # Текстовая информация (Время, Ученик, Предмет)
         time_text = f"⏰ {slot_data['time_start']} - {slot_data['time_end']}"
         student_text = f"👤 {slot_data['student']}"
         subject_text = f"📚 {slot_data['subject']}"
         
         self.lbl_time = QLabel(time_text)
-        self.lbl_time.setStyleSheet("font-weight: bold; color: #333333;")
         self.lbl_student = QLabel(student_text)
+        self.lbl_student.setStyleSheet("color: #ffffff; font-weight: 500;")
         self.lbl_subject = QLabel(subject_text)
-        self.lbl_subject.setStyleSheet("color: #666666; font-size: 11px;")
+        self.lbl_subject.setStyleSheet("color: #aaaaaa; font-size: 11px;")
         
         self.main_layout.addWidget(self.lbl_time)
         self.main_layout.addWidget(self.lbl_student)
         self.main_layout.addWidget(self.lbl_subject)
         
-        # Контейнер для кнопок управления (по умолчанию скрыт)
         self.action_container = QWidget()
         self.action_layout = QHBoxLayout(self.action_container)
-        self.action_layout.setContentsMargins(0, 4, 0, 0)
+        self.action_layout.setContentsMargins(0, 6, 0, 0)
         self.action_layout.setSpacing(6)
         
-        self.btn_edit = QPushButton("✏️ Изменить")
-        self.btn_delete = QPushButton("❌ Удалить")
+        self.btn_edit = QPushButton("✏️")
+        self.btn_delete = QPushButton("❌")
         
-        # Стили кнопок управления
-        self.btn_edit.setStyleSheet("font-size: 11px; padding: 3px; background-color: #e0e0e0; border-radius: 3px;")
-        self.btn_delete.setStyleSheet("font-size: 11px; padding: 3px; background-color: #ffcccc; color: #cc0000; border-radius: 3px;")
+        # Стильные компактные кнопки для темной темы
+        self.btn_edit.setStyleSheet("font-size: 11px; padding: 2px; background-color: #3d3d3d; border: 1px solid #555555; border-radius: 3px;")
+        self.btn_delete.setStyleSheet("font-size: 11px; padding: 2px; background-color: #442222; color: #ff8888; border: 1px solid #663333; border-radius: 3px;")
         
         self.action_layout.addWidget(self.btn_edit)
         self.action_layout.addWidget(self.btn_delete)
         
         self.main_layout.addWidget(self.action_container)
-        self.action_container.hide() # Прячем кнопки при создании
+        self.action_container.hide()
         
-        # Подключаем события кнопок
         self.btn_delete.clicked.connect(lambda: self.delete_requested.emit(self.slot_id))
         self.btn_edit.clicked.connect(lambda: self.edit_requested.emit(self.slot_id))
         
-        # Задаем базовый стиль карточки занятия
         self.set_card_style(is_nearest)
 
     def set_card_style(self, is_nearest):
-        """Определяет внешний вид карточки слота"""
+        """Определяет внешний вид карточки слота в темной теме"""
         if is_nearest:
-            # Выделение ближайшего будущего или текущего слота (нежно-красный фон и сочная красная рамка)
-            bg_color = "#fff5f5"      # Мягкий красный оттенок фона
-            border_color = "#e63946"  # Насыщенный красный цвет рамки-маркера
-            text_style = "font-weight: bold; color: #b7094c;" # Темно-красный текст для времени
-            border_width = "2px"      # Делаем рамку чуть толще, чтобы выделить слот
+            # Угольно-бордовый прямоугольник с ярким неоново-красным маркером
+            bg_color = "#2c1619"      
+            border_color = "#ff4d6d"  
+            text_style = "font-weight: bold; color: #ff758f; font-size: 13px;" 
+            border_width = "2px"      
         else:
-            # Обычный слот
-            bg_color = "#f8f9fa"
-            border_color = "#e5e5e5"
-            text_style = "font-weight: bold; color: #333333;"
+            # Стандартная карточка в тон интерфейса
+            bg_color = "#2d2d2d"
+            border_color = "#3d3d3d"
+            text_style = "font-weight: bold; color: #00bcd4; font-size: 12px;" # Приятный бирюзовый для обычного времени
             border_width = "1px"
             
         self.setStyleSheet(f"""
             SlotWidget {{
                 background-color: {bg_color};
                 border: {border_width} solid {border_color};
-                border-radius: 6px; /* Закругленные углы прямоугольника */
+                border-radius: 6px;
             }}
             SlotWidget:hover {{
                 border-color: #0078d7;
-                background-color: #ffffff;
+                background-color: #333333;
             }}
         """)
         self.lbl_time.setStyleSheet(text_style)
+
 
 
     def mousePressEvent(self, event):
