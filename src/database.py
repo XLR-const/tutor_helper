@@ -140,3 +140,11 @@ def update_slot(day_index, slot_id, time_start, time_end, student, subject):
     schedule[str(day_index)]["slots"].sort(key=lambda x: time_to_minutes(x["time_start"]))
     save_schedule(schedule)
     return True, "Слот успешно обновлен"
+
+def clear_all_weeks():
+    """Полностью очищает все слоты и границы во всех 7 днях недели"""
+    empty_structure = {
+        str(i): {"green_line": None, "slots": []} for i in range(7)
+    }
+    save_schedule(empty_structure)
+    return True

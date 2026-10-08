@@ -176,29 +176,49 @@ class MainWindow(QMainWindow):
 
 
     def setup_tray(self):
-        """Инициализация иконки в системном трее Windows"""
+        """Инициализация иконки в системном трее Windows с расширенным меню"""
         self.tray_icon = QSystemTrayIcon(self)
         
-        # Загружаем ту же иконку, что лежит в корне проекта
         icon_path = "tutor_helper.ico"
         if os.path.exists(icon_path):
             self.tray_icon.setIcon(QIcon(icon_path))
         
-        # Контекстное меню при клике правой кнопкой мыши по значку в трее
+        # Создаем контекстное меню трея
         tray_menu = QMenu()
+        
         action_show = tray_menu.addAction("Открыть Помогатор")
         action_show.triggered.connect(self.show_normal_and_raise)
+        
+        tray_menu.addSeparator() # Тонкая линия-разделитель в меню
+        
+        # НОВАЯ КНОПКА: Сброс всей недели
+        action_clear = tray_menu.addAction("🧹 Очистить всю неделю")
+        action_clear.triggered.connect(self.on_clear_all_week_click)
+        
+        tray_menu.addSeparator()
         
         action_exit = tray_menu.addAction("Выйти из программы")
         action_exit.triggered.connect(self.force_exit)
         
         self.tray_icon.setContextMenu(tray_menu)
-        
-        # Клик левой кнопкой мыши открывает окно
         self.tray_icon.activated.connect(self.on_tray_icon_activated)
-        
-        # Показываем иконку в скрытых значках
         self.tray_icon.show()
+
+    def on_clear_all_week_click(self):
+        """Слот обработки клика полной очистки базы данных"""
+        reply = QMessageBox.question(
+            self, '⚠️ Опасная зона', 
+            'Вы уверены, что хотите ПОЛНОСТЬЮ СТЕРЕТЬ расписание и Green Line на все дни недели?\nВосстановить данные будет невозможно!',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
+            QMessageBox.StandardButton.No
+        )
+        
+        if reply == QMessageBox.StandardButton.Yes:
+            from src.database import clear_all_weeks
+            if clear_all_weeks():
+                self.load_and_render_data() # Мгновенно обновляем интерфейс (сетка станет чистой)
+                QMessageBox.information(self, "Успех", "База данных успешно очищена!")
+
 
     def on_tray_icon_activated(self, reason):
         if reason == QSystemTrayIcon.ActivationReason.Trigger:
