@@ -232,7 +232,7 @@ class MainWindow(QMainWindow):
         sys.exit(0)
 
     def check_upcoming_notifications(self):
-        """Фоновый алгоритм: ищет слоты на сегодня, до которых осталось ровно 60 минут"""
+        """Фоновый алгоритм: уведомляет один раз за 1 час и один раз за 10 минут до урока"""
         schedule = load_schedule()
         today_idx = get_current_day_index()
         day_today_data = schedule.get(str(today_idx), {"green_line": None, "slots": []})
@@ -245,7 +245,6 @@ class MainWindow(QMainWindow):
         current_minutes = now.hour * 60 + now.minute
         
         for slot in slots_today:
-            # Защита от некорректных типов данных внутри слота
             if not isinstance(slot, dict) or "time_start" not in slot:
                 continue
                 
@@ -253,20 +252,36 @@ class MainWindow(QMainWindow):
                 start_minutes = time_to_minutes(slot["time_start"])
                 time_diff = start_minutes - current_minutes
                 
-                if 0 <= time_diff <= 60 and slot["id"] not in self.notified_slots:
-                    self.notified_slots.add(slot["id"])
+                # Проверяем две конкретные временные зоны
+                is_hourly_alert = (58 <= time_diff <= 60)
+                is_ten_min_alert = (8 <= time_diff <= 10)
+                
+                if is_hourly_alert or is_ten_min_alert:
+                    # Создаем уникальный ключ для памяти (например: "id_60" или "id_10")
+                    alert_type = "60" if is_hourly_alert else "10"
+                    notification_key = f"{slot['id']}_{alert_type}"
                     
-                    from PyQt6.QtWidgets import QApplication
-                    QApplication.beep()
-                    
-                    self.tray_icon.showMessage(
-                        "⏳ Скоро занятие!",
-                        f"Через {int(time_diff)} мин. урок: {slot['student']}\nПредмет: {slot['subject']}",
-                        QSystemTrayIcon.MessageIcon.Information,
-                        10000
-                    )
+                    if notification_key not in self.notified_slots:
+                        self.notified_slots.add(notification_key)
+                        
+                        # Звуковой сигнал
+                        from PyQt6.QtWidgets import QApplication
+                        QApplication.beep()
+                        
+                        # Подбираем текст в зависимости от времени
+                        title = "⏳ Занятие через час!" if is_hourly_alert else "🚨 Занятие скоро начнется!"
+                        body = f"Через {int(time_diff)} мин. урок: {slot['student']}\nПредмет: {slot['subject']}"
+                        
+                        # Выводим нативное окно
+                        self.tray_icon.showMessage(
+                            title,
+                            body,
+                            QSystemTrayIcon.MessageIcon.Information,
+                            10000
+                        )
             except Exception as e:
                 print(f"Ошибка обработки фонового слота: {e}")
+
 
 
 
