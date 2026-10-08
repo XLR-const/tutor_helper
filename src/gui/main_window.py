@@ -1,8 +1,12 @@
-from PyQt6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QMessageBox, QInputDialog, QLineEdit, QDialog, QVBoxLayout, QLabel, QDialogButtonBox
-from PyQt6.QtCore import Qt
+from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QMessageBox, 
+                             QInputDialog, QLineEdit, QDialog, QVBoxLayout, 
+                             QLabel, QDialogButtonBox, QSystemTrayIcon, QMenu)
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QIcon
 import datetime
+import os
 
-from src.calendar_utils import DAYS_RU, get_current_week_dates, get_current_day_index, find_nearest_slot
+from src.calendar_utils import DAYS_RU, get_current_week_dates, get_current_day_index, find_nearest_slot, time_to_minutes
 from src.database import load_schedule, add_slot, delete_slot, update_slot
 from src.gui.day_column import DayColumn
 
@@ -16,7 +20,6 @@ class SlotDialog(QDialog):
         
         layout = QVBoxLayout(self)
         
-        # Поля ввода
         layout.addWidget(QLabel("Время начала (например, 15:00):"))
         self.txt_start = QLineEdit(time_start)
         layout.addWidget(self.txt_start)
@@ -33,27 +36,24 @@ class SlotDialog(QDialog):
         self.txt_subject = QLineEdit(subject)
         layout.addWidget(self.txt_subject)
         
-        # Кнопки ОК / Отмена
         self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         self.button_box.accepted.connect(self.validate_and_accept)
         self.button_box.rejected.connect(self.reject)
         layout.addWidget(self.button_box)
 
     def validate_and_accept(self):
-        """Базовая проверка корректности ввода времени"""
         start = self.txt_start.text().strip()
         end = self.txt_end.text().strip()
         
-        # Проверяем формат ЧЧ:ММ
         try:
             datetime.datetime.strptime(start, "%H:%M")
             datetime.datetime.strptime(end, "%H:%M")
         except ValueError:
-            QMessageBox.critical(self, "Ошибка формата", "Время должно быть в формате ЧЧ:ММ (например, 09:30, 15:00)!")
+            QMessageBox.critical(self, "Ошибка формата", "Время должно быть в формате ЧЧ:ММ!")
             return
             
         if not self.txt_student.text().strip() or not self.txt_subject.text().strip():
-            QMessageBox.critical(self, "Ошибка заполнения", "Поля 'Ученик' и 'Предмет' не могут быть пустыми!")
+            QMessageBox.critical(self, "Ошибка заполнения", "Поля не могут быть пустыми!")
             return
             
         self.accept()
@@ -71,9 +71,8 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Помогатор репетитора")
-        self.resize(1100, 650) # Оптимальный размер под 7 столбцов
+        self.resize(1100, 650)
         
-        # Центральный виджет и горизонтальная разметка для дней недели
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.main_layout = QHBoxLayout(self.central_widget)
@@ -83,9 +82,19 @@ class MainWindow(QMainWindow):
         self.columns = []
         self.setup_ui()
         self.load_and_render_data()
+        
+        # Настройка фонового трея и уведомлений
+        self.setup_tray()
+        
+        # Список уже отправленных уведомлений, чтобы не спамить каждую секунду в течение этой минуты
+        self.notified_slots = set()
+        
+        # Таймер фоновой проверки времени (работает раз в 30 секунд)
+        self.bg_timer = QTimer(self)
+        self.bg_timer.timeout.connect(self.check_upcoming_notifications)
+        self.bg_timer.start(30000)
 
     def setup_ui(self):
-        """Инициализирует 7 колонок дней недели"""
         dates = get_current_week_dates()
         today_idx = get_current_day_index()
         
@@ -97,8 +106,6 @@ class MainWindow(QMainWindow):
                 day_date=dates[i],
                 is_today=is_today
             )
-            
-            # Подключаем сигналы от колонки к обработчикам в главном окне
             column.add_requested.connect(self.on_add_slot)
             column.slot_delete_requested.connect(self.on_delete_slot)
             column.slot_edit_requested.connect(self.on_edit_slot)
@@ -107,52 +114,128 @@ class MainWindow(QMainWindow):
             self.columns.append(column)
 
     def load_and_render_data(self):
-        """Загружает данные из JSON и обновляет отображение во всех колонках"""
         schedule = load_schedule()
         today_idx = get_current_day_index()
         
-        # Находим ближайший слот только для СЕГОДНЯШНЕГО дня
         slots_today = schedule.get(str(today_idx), [])
         nearest_slot_id = find_nearest_slot(slots_today)
         
         for i in range(7):
             slots_list = schedule.get(str(i), [])
-            # Передаем ближайший слот только той колонке, которая является сегодняшней
             col_nearest_id = nearest_slot_id if i == today_idx else None
             self.columns[i].refresh_slots(slots_list, col_nearest_id)
 
+    def setup_tray(self):
+        """Инициализация иконки в системном трее Windows"""
+        self.tray_icon = QSystemTrayIcon(self)
+        
+        # Загружаем ту же иконку, что лежит в корне проекта
+        icon_path = "tutor_helper.ico"
+        if os.path.exists(icon_path):
+            self.tray_icon.setIcon(QIcon(icon_path))
+        
+        # Контекстное меню при клике правой кнопкой мыши по значку в трее
+        tray_menu = QMenu()
+        action_show = tray_menu.addAction("Открыть Помогатор")
+        action_show.triggered.connect(self.show_normal_and_raise)
+        
+        action_exit = tray_menu.addAction("Выйти из программы")
+        action_exit.triggered.connect(self.force_exit)
+        
+        self.tray_icon.setContextMenu(tray_menu)
+        
+        # Клик левой кнопкой мыши открывает окно
+        self.tray_icon.activated.connect(self.on_tray_icon_activated)
+        
+        # Показываем иконку в скрытых значках
+        self.tray_icon.show()
+
+    def on_tray_icon_activated(self, reason):
+        if reason == QSystemTrayIcon.ActivationReason.Trigger:
+            self.show_normal_and_raise()
+
+    def show_normal_and_raise(self):
+        """Красиво разворачивает окно поверх других окон"""
+        self.showNormal()
+        self.activateWindow()
+        self.raise_()
+
+    def closeEvent(self, event):
+        """Перехват закрытия окна: прячем в трей вместо завершения процесса"""
+        if self.tray_icon.isVisible():
+            self.hide()
+            # Показываем маленькую подсказку над часами, что приложение не закрылось
+            self.tray_icon.showMessage(
+                "Помогатор репетитора",
+                "Приложение свернуто в фоновый режим и следит за расписанием.",
+                QSystemTrayIcon.MessageIcon.Information,
+                2000
+            )
+            event.ignore() # Блокируем уничтожение окна
+
+    def force_exit(self):
+        """Метод для полного закрытия программы из контекстного меню трея"""
+        self.tray_icon.hide()
+        QTimer.singleShot(0, self.close)
+        # Насильно завершаем процесс
+        import sys
+        sys.exit(0)
+
+    def check_upcoming_notifications(self):
+        """Фоновый алгоритм: ищет слоты на сегодня, до которых осталось ровно 60 минут"""
+        schedule = load_schedule()
+        today_idx = get_current_day_index()
+        slots_today = schedule.get(str(today_idx), [])
+        
+        if not slots_today:
+            return
+            
+        now = datetime.datetime.now()
+        current_minutes = now.hour * 60 + now.minute
+        
+        for slot in slots_today:
+            start_minutes = time_to_minutes(slot["time_start"])
+            
+            # Считаем разницу во времени
+            time_diff = start_minutes - current_minutes
+            
+            # Если до урока осталось от 58 до 60 минут, и уведомление для этого урока еще не посылалось сегодня
+            if 0 < time_diff <= 60 and slot["id"] not in self.notified_slots:
+                self.notified_slots.add(slot["id"])
+                
+                # Посылаем нативное всплывающее Windows-уведомление (как в Steam)
+                self.tray_icon.showMessage(
+                    "⏳ Скоро занятие!",
+                    f"Через час урок: {slot['student']}\nПредмет: {slot['subject']} ({slot['time_start']})",
+                    QSystemTrayIcon.MessageIcon.Information,
+                    7000 # Время отображения на экране в миллисекундах
+                )
+
+    # Методы кнопок добавления/удаления (остаются прежними, но с обновлением интерфейса)
     def on_add_slot(self, day_index):
-        """Вызывает диалог добавления нового занятия"""
         dialog = SlotDialog(self)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             t_start, t_end, student, subject = dialog.get_data()
-            
-            # Пытаемся сохранить в базу данных
             success, message = add_slot(day_index, t_start, t_end, student, subject)
             if success:
                 self.load_and_render_data()
             else:
-                # Окно ошибки Windows при наложении
                 QMessageBox.critical(self, "Ошибка сохранения", message)
 
     def on_delete_slot(self, day_index, slot_id):
-        """Удаляет слот после подтверждения"""
         reply = QMessageBox.question(
             self, 'Удаление', 'Вы уверены, что хотите удалить этот слот насовсем?',
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
             QMessageBox.StandardButton.No
         )
-        
         if reply == QMessageBox.StandardButton.Yes:
             delete_slot(day_index, slot_id)
             self.load_and_render_data()
 
     def on_edit_slot(self, day_index, slot_id):
-        """Находит данные слота и открывает диалог редактирования"""
         schedule = load_schedule()
         slots = schedule.get(str(day_index), [])
         target_slot = next((s for s in slots if s["id"] == slot_id), None)
-        
         if not target_slot:
             return
             
@@ -163,10 +246,8 @@ class MainWindow(QMainWindow):
             student=target_slot["student"],
             subject=target_slot["subject"]
         )
-        
         if dialog.exec() == QDialog.DialogCode.Accepted:
             t_start, t_end, student, subject = dialog.get_data()
-            
             success, message = update_slot(day_index, slot_id, t_start, t_end, student, subject)
             if success:
                 self.load_and_render_data()
