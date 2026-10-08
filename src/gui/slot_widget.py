@@ -2,9 +2,8 @@ from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButt
 from PyQt6.QtCore import pyqtSignal, Qt
 
 class SlotWidget(QWidget):
-    # Сигналы для связи с главным окном при нажатии на кнопки
-    delete_requested = pyqtSignal(str) # Передает id слота
-    edit_requested = pyqtSignal(str)   # Передает id слота
+    delete_requested = pyqtSignal(str)
+    edit_requested = pyqtSignal(str)
 
     def __init__(self, slot_data, is_nearest=False, parent=None):
         super().__init__(parent)
@@ -14,7 +13,9 @@ class SlotWidget(QWidget):
         self.main_layout = QVBoxLayout(self)
         self.main_layout.setContentsMargins(8, 8, 8, 8)
         self.main_layout.setSpacing(4)
+        self.main_layout.setAlignment(Qt.AlignmentFlag.AlignTop) # Все элементы прижаты к верху
         
+        # Данные слота
         time_text = f"⏰ {slot_data['time_start']} - {slot_data['time_end']}"
         student_text = f"👤 {slot_data['student']}"
         subject_text = f"📚 {slot_data['subject']}"
@@ -29,23 +30,48 @@ class SlotWidget(QWidget):
         self.main_layout.addWidget(self.lbl_student)
         self.main_layout.addWidget(self.lbl_subject)
         
+        # Контейнер для кнопок управления
         self.action_container = QWidget()
         self.action_layout = QHBoxLayout(self.action_container)
-        self.action_layout.setContentsMargins(0, 6, 0, 0)
+        self.action_layout.setContentsMargins(0, 4, 0, 0)
         self.action_layout.setSpacing(6)
         
         self.btn_edit = QPushButton("✏️")
         self.btn_delete = QPushButton("❌")
         
-        # Стильные компактные кнопки для темной темы
-        self.btn_edit.setStyleSheet("font-size: 11px; padding: 2px; background-color: #3d3d3d; border: 1px solid #555555; border-radius: 3px;")
-        self.btn_delete.setStyleSheet("font-size: 11px; padding: 2px; background-color: #442222; color: #ff8888; border: 1px solid #663333; border-radius: 3px;")
+        # Жестко фиксируем геометрию только кнопок, чтобы они не сжимались
+        self.btn_edit.setFixedHeight(24)
+        self.btn_edit.setMinimumWidth(45)
+        self.btn_delete.setFixedHeight(24)
+        self.btn_delete.setMinimumWidth(45)
+        
+        self.btn_edit.setStyleSheet("""
+            QPushButton {
+                font-size: 11px; 
+                background-color: #3d3d3d; 
+                border: 1px solid #555555; 
+                border-radius: 4px;
+                color: #ffffff;
+            }
+            QPushButton:hover { background-color: #4d4d4d; border-color: #0078d7; }
+        """)
+        
+        self.btn_delete.setStyleSheet("""
+            QPushButton {
+                font-size: 11px; 
+                background-color: #442222; 
+                color: #ff8888; 
+                border: 1px solid #663333; 
+                border-radius: 4px;
+            }
+            QPushButton:hover { background-color: #552222; border-color: #ff4d6d; }
+        """)
         
         self.action_layout.addWidget(self.btn_edit)
         self.action_layout.addWidget(self.btn_delete)
         
         self.main_layout.addWidget(self.action_container)
-        self.action_container.hide()
+        self.action_container.hide() # По умолчанию скрываем кнопки
         
         self.btn_delete.clicked.connect(lambda: self.delete_requested.emit(self.slot_id))
         self.btn_edit.clicked.connect(lambda: self.edit_requested.emit(self.slot_id))
@@ -53,18 +79,15 @@ class SlotWidget(QWidget):
         self.set_card_style(is_nearest)
 
     def set_card_style(self, is_nearest):
-        """Определяет внешний вид карточки слота в темной теме"""
         if is_nearest:
-            # Угольно-бордовый прямоугольник с ярким неоново-красным маркером
             bg_color = "#2c1619"      
             border_color = "#ff4d6d"  
             text_style = "font-weight: bold; color: #ff758f; font-size: 13px;" 
             border_width = "2px"      
         else:
-            # Стандартная карточка в тон интерфейса
             bg_color = "#2d2d2d"
             border_color = "#3d3d3d"
-            text_style = "font-weight: bold; color: #00bcd4; font-size: 12px;" # Приятный бирюзовый для обычного времени
+            text_style = "font-weight: bold; color: #00bcd4; font-size: 12px;" 
             border_width = "1px"
             
         self.setStyleSheet(f"""
@@ -80,13 +103,15 @@ class SlotWidget(QWidget):
         """)
         self.lbl_time.setStyleSheet(text_style)
 
-
-
     def mousePressEvent(self, event):
-        """Перехват клика мыши: показываем или скрываем меню кнопок"""
+        """Перехват клика мыши: динамически меняем размер карточки при открытии меню"""
         if event.button() == Qt.MouseButton.LeftButton:
             if self.action_container.isVisible():
                 self.action_container.hide()
             else:
                 self.action_container.show()
+            
+            # ВАЖНО: Принудительно просим карточку пересчитать свою высоту под новые элементы
+            self.adjustSize()
+            
         super().mousePressEvent(event)

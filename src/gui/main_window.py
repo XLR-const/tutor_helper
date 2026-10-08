@@ -110,20 +110,28 @@ class MainWindow(QMainWindow):
             column.slot_delete_requested.connect(self.on_delete_slot)
             column.slot_edit_requested.connect(self.on_edit_slot)
             
+            column.green_line_changed.connect(self.on_green_line_changed)
+
+            
             self.main_layout.addWidget(column)
             self.columns.append(column)
 
     def load_and_render_data(self):
+        """Загружает данные из JSON и обновляет отображение во всех колонках"""
         schedule = load_schedule()
         today_idx = get_current_day_index()
         
-        slots_today = schedule.get(str(today_idx), [])
+        # Извлекаем слоты для расчета ближайшего урока
+        day_today_data = schedule.get(str(today_idx), {"green_line": None, "slots": []})
+        slots_today = day_today_data.get("slots", [])
         nearest_slot_id = find_nearest_slot(slots_today)
         
         for i in range(7):
-            slots_list = schedule.get(str(i), [])
+            day_data = schedule.get(str(i), {"green_line": None, "slots": []})
             col_nearest_id = nearest_slot_id if i == today_idx else None
-            self.columns[i].refresh_slots(slots_list, col_nearest_id)
+            # Передаем весь словарь дня (слоты + границу)
+            self.columns[i].refresh_slots(day_data, col_nearest_id)
+
 
     def setup_tray(self):
         """Инициализация иконки в системном трее Windows"""
@@ -185,36 +193,39 @@ class MainWindow(QMainWindow):
         """Фоновый алгоритм: ищет слоты на сегодня, до которых осталось ровно 60 минут"""
         schedule = load_schedule()
         today_idx = get_current_day_index()
-        slots_today = schedule.get(str(today_idx), [])
+        day_today_data = schedule.get(str(today_idx), {"green_line": None, "slots": []})
+        slots_today = day_today_data.get("slots", [])
         
-        if not slots_today:
+        if not slots_today or not isinstance(slots_today, list):
             return
             
         now = datetime.datetime.now()
         current_minutes = now.hour * 60 + now.minute
         
         for slot in slots_today:
-            start_minutes = time_to_minutes(slot["time_start"])
-            time_diff = start_minutes - current_minutes
-            
-            # Если до урока осталось от 58 до 60 минут, и мы еще не уведомляли
-            if 0 < time_diff <= 60 and slot["id"] not in self.notified_slots:
-                self.notified_slots.add(slot["id"])
+            # Защита от некорректных типов данных внутри слота
+            if not isinstance(slot, dict) or "time_start" not in slot:
+                continue
                 
-                # 1. Резерв: Издаем стандартный системный звук Windows (короткий писк)
-                from PyQt6.QtWidgets import QApplication
-                QApplication.beep()
+            try:
+                start_minutes = time_to_minutes(slot["time_start"])
+                time_diff = start_minutes - current_minutes
                 
-                # 2. Резерв: Заставляем иконку программы на панели задач мигать (актуально, если окно открыто)
-                QApplication.alert(self, 5000) # Мигает в течение 5 секунд
-                
-                # 3. Основной способ: Пробуем выкинуть стандартное облачко Windows
-                self.tray_icon.showMessage(
-                    "⏳ Скоро занятие!",
-                    f"Через час урок: {slot['student']}\nПредмет: {slot['subject']} ({slot['time_start']})",
-                    QSystemTrayIcon.MessageIcon.Information,
-                    10000 # Увеличили время показа до 10 секунд
-                )
+                if 0 <= time_diff <= 60 and slot["id"] not in self.notified_slots:
+                    self.notified_slots.add(slot["id"])
+                    
+                    from PyQt6.QtWidgets import QApplication
+                    QApplication.beep()
+                    
+                    self.tray_icon.showMessage(
+                        "⏳ Скоро занятие!",
+                        f"Через {int(time_diff)} мин. урок: {slot['student']}\nПредмет: {slot['subject']}",
+                        QSystemTrayIcon.MessageIcon.Information,
+                        10000
+                    )
+            except Exception as e:
+                print(f"Ошибка обработки фонового слота: {e}")
+
 
 
     # Методы кнопок добавления/удаления (остаются прежними, но с обновлением интерфейса)
@@ -229,33 +240,62 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Ошибка сохранения", message)
 
     def on_delete_slot(self, day_index, slot_id):
+        """Удаляет слот после подтверждения"""
         reply = QMessageBox.question(
             self, 'Удаление', 'Вы уверены, что хотите удалить этот слот насовсем?',
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
             QMessageBox.StandardButton.No
         )
+        
         if reply == QMessageBox.StandardButton.Yes:
             delete_slot(day_index, slot_id)
             self.load_and_render_data()
 
     def on_edit_slot(self, day_index, slot_id):
+        """Находит данные слота с учетом новой структуры и открывает диалог редактирования"""
         schedule = load_schedule()
-        slots = schedule.get(str(day_index), [])
-        target_slot = next((s for s in slots if s["id"] == slot_id), None)
+        
+        # Безопасно извлекаем словарь дня и список его слотов
+        day_data = schedule.get(str(day_index), {"green_line": None, "slots": []})
+        slots = day_data.get("slots", [])
+        
+        # Ищем нужный слот по ID
+        target_slot = None
+        for s in slots:
+            if isinstance(s, dict) and s.get("id") == slot_id:
+                target_slot = s
+                break
+        
         if not target_slot:
+            QMessageBox.warning(self, "Ошибка", "Не удалось найти данные занятия для редактирования!")
             return
             
+        # Открываем форму с уже заполненными старыми данными
         dialog = SlotDialog(
             self,
-            time_start=target_slot["time_start"],
-            time_end=target_slot["time_end"],
-            student=target_slot["student"],
-            subject=target_slot["subject"]
+            time_start=target_slot.get("time_start", ""),
+            time_end=target_slot.get("time_end", ""),
+            student=target_slot.get("student", ""),
+            subject=target_slot.get("subject", "")
         )
+        
         if dialog.exec() == QDialog.DialogCode.Accepted:
             t_start, t_end, student, subject = dialog.get_data()
+            
+            # Сохраняем обновленные данные в базу
             success, message = update_slot(day_index, slot_id, t_start, t_end, student, subject)
             if success:
                 self.load_and_render_data()
             else:
                 QMessageBox.critical(self, "Ошибка изменения", message)
+
+                
+    def on_green_line_changed(self, day_index, time_str):
+        """Обрабатывает установку или удаление границы личных дел"""
+        from src.database import set_green_line
+        success, message = set_green_line(day_index, time_str)
+        if success:
+            self.load_and_render_data()
+        else:
+            QMessageBox.critical(self, "Ошибка Green Line", message)
+
