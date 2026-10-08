@@ -195,21 +195,27 @@ class MainWindow(QMainWindow):
         
         for slot in slots_today:
             start_minutes = time_to_minutes(slot["time_start"])
-            
-            # Считаем разницу во времени
             time_diff = start_minutes - current_minutes
             
-            # Если до урока осталось от 58 до 60 минут, и уведомление для этого урока еще не посылалось сегодня
+            # Если до урока осталось от 58 до 60 минут, и мы еще не уведомляли
             if 0 < time_diff <= 60 and slot["id"] not in self.notified_slots:
                 self.notified_slots.add(slot["id"])
                 
-                # Посылаем нативное всплывающее Windows-уведомление (как в Steam)
+                # 1. Резерв: Издаем стандартный системный звук Windows (короткий писк)
+                from PyQt6.QtWidgets import QApplication
+                QApplication.beep()
+                
+                # 2. Резерв: Заставляем иконку программы на панели задач мигать (актуально, если окно открыто)
+                QApplication.alert(self, 5000) # Мигает в течение 5 секунд
+                
+                # 3. Основной способ: Пробуем выкинуть стандартное облачко Windows
                 self.tray_icon.showMessage(
                     "⏳ Скоро занятие!",
                     f"Через час урок: {slot['student']}\nПредмет: {slot['subject']} ({slot['time_start']})",
                     QSystemTrayIcon.MessageIcon.Information,
-                    7000 # Время отображения на экране в миллисекундах
+                    10000 # Увеличили время показа до 10 секунд
                 )
+
 
     # Методы кнопок добавления/удаления (остаются прежними, но с обновлением интерфейса)
     def on_add_slot(self, day_index):
