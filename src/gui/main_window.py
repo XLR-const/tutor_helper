@@ -1,6 +1,6 @@
 from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QMessageBox, 
                              QInputDialog, QLineEdit, QDialog, QVBoxLayout, 
-                             QLabel, QDialogButtonBox, QSystemTrayIcon, QMenu)
+                             QLabel, QDialogButtonBox, QSystemTrayIcon, QMenu, QPushButton)
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon
 import datetime
@@ -9,6 +9,7 @@ import os
 from src.calendar_utils import DAYS_RU, get_current_week_dates, get_current_day_index, find_nearest_slot, time_to_minutes
 from src.database import load_schedule, add_slot, delete_slot, update_slot
 from src.gui.day_column import DayColumn
+from src.export_utils import save_grid_to_png
 
 class SlotDialog(QDialog):
     """Специальное диалоговое окно для ввода и редактирования данных слота"""
@@ -71,14 +72,54 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Помогатор репетитора")
-        self.resize(1100, 650)
+        self.resize(1150, 700) # Чуть увеличили размер, чтобы кнопка сверху не сжимала дни
         
+        # 1. Основной вертикальный контейнер для всего окна
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
-        self.main_layout = QHBoxLayout(self.central_widget)
-        self.main_layout.setContentsMargins(10, 10, 10, 10)
+        self.window_layout = QVBoxLayout(self.central_widget)
+        self.window_layout.setContentsMargins(10, 10, 10, 10)
+        self.window_layout.setSpacing(6)
+        
+        # 2. СОЗДАЕМ ВЕРХНЮЮ ПАНЕЛЬ ДЛЯ КНОПКИ ЭКСПОРТА
+        self.top_panel = QWidget()
+        self.top_layout = QHBoxLayout(self.top_panel)
+        self.top_layout.setContentsMargins(4, 0, 4, 4)
+        
+        self.btn_export_png = QPushButton("📸 Сохранить расписание как фото (PNG)")
+        self.btn_export_png.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_export_png.setStyleSheet("""
+            QPushButton {
+                background-color: #1e1e1e;
+                color: #00bcd4;
+                border: 1px solid #00bcd4;
+                border-radius: 6px;
+                padding: 6px 14px;
+                font-weight: bold;
+                font-size: 12px;
+            }
+            QPushButton:hover {
+                background-color: #00bcd4;
+                color: #121212;
+            }
+        """)
+        # Подключаем клик кнопки к методу (его мы добавим следующим шагом)
+        self.btn_export_png.clicked.connect(self.export_to_png)
+        self.top_layout.addWidget(self.btn_export_png, alignment=Qt.AlignmentFlag.AlignLeft)
+        
+        # Добавляем верхнюю панель в самый верх окна
+        self.window_layout.addWidget(self.top_panel)
+        
+        # 3. ВАША СЕТКА ДНЕЙ НЕДЕЛИ (теперь она живет внутри отдельного виджета под кнопкой)
+        self.grid_widget = QWidget()
+        self.main_layout = QHBoxLayout(self.grid_widget)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
         self.main_layout.setSpacing(8)
         
+        # Кладем сетку дней под кнопку и заставляем её растягиваться на всё свободное место
+        self.window_layout.addWidget(self.grid_widget, stretch=1)
+        
+        # 4. Ваш оригинальный код настроек и таймеров (остался полностью без изменений)
         self.columns = []
         self.setup_ui()
         self.load_and_render_data()
@@ -93,6 +134,7 @@ class MainWindow(QMainWindow):
         self.bg_timer = QTimer(self)
         self.bg_timer.timeout.connect(self.check_upcoming_notifications)
         self.bg_timer.start(30000)
+
 
     def setup_ui(self):
         dates = get_current_week_dates()
@@ -298,4 +340,9 @@ class MainWindow(QMainWindow):
             self.load_and_render_data()
         else:
             QMessageBox.critical(self, "Ошибка Green Line", message)
+            
+    def export_to_png(self):
+        """Вызывает изолированную внешнюю функцию для создания снимка экрана"""
+        save_grid_to_png(self, self.grid_widget, self.columns)
+
 
