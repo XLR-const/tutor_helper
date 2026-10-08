@@ -4,7 +4,9 @@ from PyQt6.QtWidgets import (QMainWindow, QWidget, QHBoxLayout, QMessageBox,
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QIcon
 import datetime
+import sys
 import os
+import winreg
 
 from src.calendar_utils import DAYS_RU, get_current_week_dates, get_current_day_index, find_nearest_slot, time_to_minutes
 from src.database import load_schedule, add_slot, delete_slot, update_slot
@@ -176,22 +178,40 @@ class MainWindow(QMainWindow):
 
 
     def setup_tray(self):
-        """Инициализация иконки в системном трее Windows с расширенным меню"""
+        """Инициализация иконки в системном трее из внутренних ресурсов сборки"""
         self.tray_icon = QSystemTrayIcon(self)
         
-        icon_path = "tutor_helper.ico"
+        # Проверяем, запущена ли скомпилированная программа
+        if getattr(sys, 'frozen', False):
+            # PyInstaller распаковывает ресурсы во временную папку _MEIPASS
+            base_dir = getattr(sys, '_MEIPASS', os.path.dirname(sys.executable))
+        else:
+            # Если запускаем как обычный скрипт .py
+            base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            
+        icon_path = os.path.join(base_dir, "tutor_helper.ico")
+        
         if os.path.exists(icon_path):
             self.tray_icon.setIcon(QIcon(icon_path))
+        else:
+            # На всякий случай: если файл не найден, берем системный значок, чтобы трей не упал
+            self.tray_icon.setIcon(self.style().standardIcon(self.style().StandardPixmap.SP_ComputerIcon))
+
         
-        # Создаем контекстное меню трея
         tray_menu = QMenu()
         
         action_show = tray_menu.addAction("Открыть Помогатор")
         action_show.triggered.connect(self.show_normal_and_raise)
         
-        tray_menu.addSeparator() # Тонкая линия-разделитель в меню
+        tray_menu.addSeparator()
         
-        # НОВАЯ КНОПКА: Сброс всей недели
+        # НОВАЯ ГАЛОЧКА: Автозагрузка с Windows
+        self.action_autostart = tray_menu.addAction("⚙️ Автозагрузка с Windows")
+        self.action_autostart.setCheckable(True)
+        # Проверяем при старте, прописана ли уже программа в реестре, и ставим галочку
+        self.action_autostart.setChecked(self.check_autostart_registry())
+        self.action_autostart.triggered.connect(self.toggle_autostart)
+        
         action_clear = tray_menu.addAction("🧹 Очистить всю неделю")
         action_clear.triggered.connect(self.on_clear_all_week_click)
         
@@ -203,6 +223,68 @@ class MainWindow(QMainWindow):
         self.tray_icon.setContextMenu(tray_menu)
         self.tray_icon.activated.connect(self.on_tray_icon_activated)
         self.tray_icon.show()
+
+    def check_autostart_registry(self):
+        """Проверяет в реестре Windows, включен ли автозапуск для приложения"""
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_READ)
+            # Ищем ключ с именем "TutorAssistant"
+            value, _ = winreg.QueryValueEx(key, "TutorAssistant")
+            winreg.CloseKey(key)
+            return True
+        except WindowsError:
+            return False
+
+    def toggle_autostart(self, checked):
+        """Включает или выключает автозапуск программы в реестре Windows"""
+        # Определяем путь к запущенному файлу
+        # Если запущена сборка .exe, sys.frozen будет True, иначе это обычный .py скрипт
+        is_exe = getattr(sys, 'frozen', False)
+        
+        if not is_exe:
+            QMessageBox.warning(
+                self, "Автозагрузка", 
+                "Запись в реестр доступна только для скомпилированного .exe файла!\n"
+                "Скрипты .py не могут быть добавлены в автозапуск напрямую."
+            )
+            self.action_autostart.setChecked(False)
+            return
+
+        # Получаем полный абсолютный путь к вашему .exe файлу
+        exe_path = os.path.abspath(sys.argv[0])
+        
+        # Модифицируем путь, чтобы программа запускалась в свернутом режиме (флаг --minimized)
+        # Для этого в будущем можно будет дописать логику, но пока просто прописываем путь
+        registry_value = f'"{exe_path}"'
+
+        try:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_WRITE)
+            
+            if checked:
+                # Записываем ключ в реестр
+                winreg.SetValueEx(key, "TutorAssistant", 0, winreg.REG_SZ, registry_value)
+                self.tray_icon.showMessage(
+                    "Автозагрузка включена",
+                    "Помогатор теперь будет автоматически запускаться при включении компьютера.",
+                    QSystemTrayIcon.MessageIcon.Information, 2000
+                )
+            else:
+                # Удаляем ключ из реестра
+                try:
+                    winreg.DeleteValue(key, "TutorAssistant")
+                    self.tray_icon.showMessage(
+                        "Автозагрузка выключена",
+                        "Программа успешно удалена из автозапуска Windows.",
+                        QSystemTrayIcon.MessageIcon.Information, 2000
+                    )
+                except KeyError:
+                    pass
+                    
+            winreg.CloseKey(key)
+        except Exception as e:
+            QMessageBox.critical(self, "Ошибка реестра", f"Не удалось изменить настройки автозапуска: {e}")
+            self.action_autostart.setChecked(not checked) # Возвращаем галочку назад при сбое
+
 
     def on_clear_all_week_click(self):
         """Слот обработки клика полной очистки базы данных"""

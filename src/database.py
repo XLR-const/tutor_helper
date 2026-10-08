@@ -1,9 +1,18 @@
 import os
 import json
 import uuid
+import sys
 from src.calendar_utils import time_to_minutes
 
-DATA_FILE = os.path.join("data", "schedule.json")
+# Определяем базовую папку, где физически лежит запущенный .exe или .py файл
+if getattr(sys, 'frozen', False):
+    BASE_DIR = os.path.dirname(sys.executable)
+else:
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# Теперь путь к базе данных всегда абсолютный и жестко привязан к папке программы
+DATA_FILE = os.path.join(BASE_DIR, "data", "schedule.json")
+
 
 def load_schedule():
     """Загружает расписание из JSON-файла с принудительной валидацией новой структуры"""

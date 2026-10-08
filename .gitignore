@@ -4,3 +4,6 @@ data/schedule.json
 build/
 dist/
 *.spec
+
+__pycache__/
+*.pyc
